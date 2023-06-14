@@ -19,8 +19,7 @@ class GPTSlideExpander:
 
     @staticmethod
     def init_api_key():
-        """get the api key from the environment arguments"""
-        # openai.api_key = os.getenv("OPENAI_API_KEY")
+        """get the api key from file"""
         with open(r"C:\Users\USER\Downloads\api_key.txt", 'r') as f:
             openai.api_key = str(f.read())
 
