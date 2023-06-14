@@ -1,5 +1,5 @@
 from pptx import Presentation
-from typing import Dict, List
+from typing import Dict
 
 
 class PresentationParser:
@@ -24,31 +24,82 @@ class PresentationParser:
     def parse(self):
         self.presentation_text = PresentationParser.extract_text(self.presentation)
 
+    from pptx import Presentation
+    from typing import Dict
+
     @staticmethod
-    def extract_text(presentation) -> Dict[int, str]:
+    def extract_text(presentation: Presentation) -> Dict[int, str]:
         """
         Extracts the text from each shape in each slide of a PowerPoint presentation.
 
         Args:
-            presentation (Presentation): The file path to the PowerPoint presentation.
+            presentation (Presentation): The PowerPoint presentation object.
 
         Returns:
-           Dict[int, str] of string of the slides by slide number.
+            Dict[int, str] of string of the slides by slide number.
         """
         presentation_text: Dict[int, str] = {}
-        slide_number = 0
-        for slide in presentation.slides:
-            slide_number = slide_number + 1
-            text = ""
-            for shape in slide.shapes:
-                if not shape.has_text_frame:
-                    continue
-                for paragraph in shape.text_frame.paragraphs:
-                    text += "".join(run.text.strip() for run in paragraph.runs)
-                    text += "\n"
+
+        for slide_number, slide in enumerate(presentation.slides, start=1):
+            text = PresentationParser.extract_text_from_slide(slide)
+
             if text.strip():
                 presentation_text[slide_number] = text.strip()
+
         return presentation_text
+
+    @staticmethod
+    def extract_text_from_slide(slide) -> str:
+        """
+        Extracts the text from each shape in a slide.
+
+        Args:
+            slide: The slide object.
+
+        Returns:
+            str: The extracted text from the slide.
+        """
+        text = ""
+
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                text += PresentationParser.extract_text_from_shape(shape)
+
+        return text.strip()
+
+    @staticmethod
+    def extract_text_from_shape(shape) -> str:
+        """
+        Extracts the text from a shape.
+
+        Args:
+            shape: The shape object.
+
+        Returns:
+            str: The extracted text from the shape.
+        """
+        text = ""
+
+        for paragraph in shape.text_frame.paragraphs:
+            text += PresentationParser.extract_text_from_paragraph(paragraph)
+
+        return text
+
+    @staticmethod
+    def extract_text_from_paragraph(paragraph) -> str:
+        """
+        Extracts the text from a paragraph.
+
+        Args:
+            paragraph: The paragraph object.
+
+        Returns:
+            str: The extracted text from the paragraph.
+        """
+        runs_text = [run.text.strip() for run in paragraph.runs]
+        text = "".join(runs_text) + "\n"
+
+        return text
 
     def get_all_presentation_text(self):
         """
