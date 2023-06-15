@@ -50,8 +50,6 @@ def status(uid):
     """
     file_path = find_file_by_uid(uid)
 
-    # folder, file_path = search_for_uid_in_folders([app.config['UPLOAD_FOLDER'], app.config['OUTPUTS_FOLDER']],uid)
-
     if file_path is None:
         response = {
             'status': 'not found',
@@ -78,22 +76,6 @@ def status(uid):
             response.update(output_data)
 
     return jsonify(response)
-
-
-def search_for_uid_in_folders(folders_path, uid):
-    """
-    Search for a UID in a list of folders.
-    :param folders_path: List of folder paths to search.
-    :param uid: The unique identifier (UID) to search for.
-    :return: The folder and file name where the UID is found, or (None, None) if not found.
-    """
-    for folder in folders_path:
-        if os.path.isdir(folder):
-            file_list = os.listdir(folder)
-            for filename in file_list:
-                if os.path.isfile(os.path.join(folder, filename)) and uid in filename:
-                    return folder, filename
-    return "", ""
 
 
 def generate_uid():
