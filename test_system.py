@@ -1,39 +1,36 @@
-import subprocess
+import threading
 import time
-from web_api import app
+import web_api as web_server
+from explainer import process_files
 from web_app_client import WebAppClient
 
 
-def start_web_api():
-    subprocess.Popen(["python", "web_api.py"])  # Start the Web API
-
-
-def start_explainer():
-    subprocess.Popen(["python", "explainer.py"])  # Start the Explainer
-
-
 def test_system():
-    start_web_api()
-    time.sleep(2)  # Wait for the Web API to start
+    """
+    Run the test scenario.
+    This function starts the web server and the explainer in separate threads, performs an upload, waits for the
+    explainer to finish processing the lecture, and retrieves the status. It then asserts that the process of
+    explaining the lecture is done and prints the test result.
+    """
 
-    start_explainer()
-    time.sleep(2)  # Wait for the Explainer to start
-
-    client = WebAppClient('http://localhost:5000')
-    time.sleep(10)
-    # Upload a sample presentation
-    file_path = r"asyncio-intro.pptx"
-    uid = client.upload(file_path)
-    print(f"Upload UID: {uid}")
-
-    # Check the status of the presentation
-    status = client.check_status(uid)
-    assert status.is_done(), "Test Failed!!\n"
+    server_thread = threading.Thread(target=web_server.run_web_server)
+    server_thread.start()
+    # Wait for the server to start
+    time.sleep(2)
+    explainer_thread = threading.Thread(target=process_files)
+    explainer_thread.start()
+    # Wait for the explainer to start
+    time.sleep(2)
+    web_client = WebAppClient("http://localhost:5000")
+    uid = web_client.upload("asyncio-intro.pptx")
+    # Wait for the explainer to finish his lecture processing
+    time.sleep(15)
+    print("check status")
+    response = web_client.check_status(uid)
+    print("finish check status")
+    assert response.is_done(), "Test Failed!!\n" \
+                               "Something went wrong - the process of explaining the lecture did not finished"
     print("Test Passed!!")
-    print(f"Status: {status.status}")
-    print(f"Filename: {status.filename}")
-    print(f"Timestamp: {status.timestamp}")
-    print(f"Explanation: {status.explanation}")
 
 
 if __name__ == '__main__':

@@ -121,7 +121,7 @@ def run_web_app():
     # Upload a file and get the UID
     uid = client.upload(r"C:\Networks\final_project_test\asyncio-intro.pptx")
     print(f"Upload UID: {uid}")
-    time.sleep(10)
+    time.sleep(40)
     # Get the status of an upload
     status = client.check_status(uid)
     if status.is_done():

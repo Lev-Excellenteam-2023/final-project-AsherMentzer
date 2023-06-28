@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import json
 import time
@@ -29,7 +30,7 @@ def upload():
     file = request.files['file']
     uid = generate_uid()
     filename = get_filename(file.filename)
-    timestamp = int(time.time())
+    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')  # int(time.time())
     new_filename = f"{filename}_{timestamp}_{uid}"
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], new_filename)
     file.save(file_path)
@@ -48,6 +49,7 @@ def status(uid):
     Returns:
         flask.Response: JSON response containing the status, filename, timestamp, and explanation of the upload.
     """
+    print(uid)
     file_path = find_file_by_uid(uid)
 
     if file_path is None:
@@ -60,6 +62,7 @@ def status(uid):
         return jsonify(response), 404
 
     file_status = get_status(file_path)
+    print("bug check")
     filename, timestamp, explanation = get_file_details(file_path, file_status)
 
     response = {
@@ -163,9 +166,12 @@ def get_output_file(file_path):
     Returns:
         str: The path of the output file if found, or None if not found.
     """
-    output_filename = f"{os.path.splitext(file_path)[0]}_output.json"
-    output_file_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
+    print(file_path)
+    output_filename = f"C:\\Networks\\final-project-AsherMentzer\\outputs\\{os.path.basename(file_path)}.json"
+    print(output_filename)
+    output_file_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
     if os.path.isfile(output_file_path):
+        print("found")
         return output_file_path
     return None
 
