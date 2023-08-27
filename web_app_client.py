@@ -54,7 +54,7 @@ class WebAppClient:
         """
         self.base_url = base_url
 
-    def upload(self, file_path: str) -> str:
+    def upload(self, file_path: str, email: str = None) -> str:
         """
         Uploads a file to the Web API.
 
@@ -65,30 +65,66 @@ class WebAppClient:
             str: The UID of the upload.
         Raises:
             requests.HTTPError: If the upload request fails.
+            :param file_path:
+            :param email:
         """
-        url = f"{self.base_url}/upload"
-        files = {'file': open(file_path, 'rb')}
-        response = requests.post(url, files=files)
+        try:
+            with open(file_path, 'rb') as file:
+                files = {'file': file}
+                data = {"email": email} if email else None
+                response = requests.post(f"{self.base_url}/upload", files=files, data=data)
+                response_json = response.json()
+                if response.ok:
+                    return response_json['uid']
+                else:
+                    raise Exception(f"Upload failed: {response_json.get('error')}")
+        except Exception as e:
+            raise Exception(f"Upload failed: {str(e)}")
 
-        if response.ok:
-            response_data = json.loads(response.text)
-            return response_data['uid']
-        else:
-            response.raise_for_status()
+    def get_status(self, uid: str = None, email: str = None, filename: str = None) -> Status:
+        """
+        Get the status of a request by UID or by email and a filename.
+        :param filename: The name of the file uploaded.
+        :param email: The email address used during the upload.
+        :param uid: The unique identifier (UID) of the request.
+        :return: Status Object representing the status of the request.
+        :raises Exception: If the status request fails.
+        """
+        try:
+            if uid:
+                upload_identified = uid
+            elif email and filename:
+                upload_identified = f"{filename} {email}"
+            else:
+                raise Exception(f"Status request failed: no upload identified provided")
+            response = requests.get(f"{self.base_url}/status/{upload_identified}")
+            response_json = response.json()
+            if response.ok:
+                status = response_json['status']
+                filename = response_json['filename']
+                timestamp = response_json['upload_time']
+                explanation = []
+                if response_json['status'] == 'done':
+                    explanation = response_json['explanation']
+                return Status(status, filename, timestamp, explanation)
+            else:
+                raise Exception(f"Status request failed")
+        except Exception as e:
+            raise Exception(f"Status request failed: {str(e)}")
 
-    def check_status(self, uid: str) -> Status:
+    def check_status_for_user(self, file_name: str, email: str) -> Status:
         """
         Retrieves the status of an upload from the Web API.
 
         Args:
-            uid (str): The UID of the upload.
-
+            file_name (str): The file name.
+            email (str): The user email.
         Returns:
             Status: The status of the upload.
         Raises:
             requests.HTTPError: If the status request fails.
         """
-        url = f"{self.base_url}/status/{uid}"
+        url = f"{self.base_url}/status/{file_name + email}"
         response = requests.get(url)
 
         if response.ok:

@@ -1,10 +1,15 @@
 from datetime import datetime
 import os
 import json
-import time
 import uuid
+from typing import Dict, Union
 
-from flask import Flask, request, jsonify
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from db.db_engine import Upload, User, UploadStatus, save_to_json, get_engine
+from flask import Flask, request, jsonify, Response, redirect, url_for, flash
+
+from explainer import OUTPUTS_FOLDER
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
@@ -29,13 +34,39 @@ def upload():
 
     file = request.files['file']
     uid = generate_uid()
-    filename = get_filename(file.filename)
-    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')  # int(time.time())
-    new_filename = f"{filename}_{timestamp}_{uid}"
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], new_filename)
-    file.save(file_path)
-    response = {'uid': uid}
-    return jsonify(response)
+    email = request.form.get('email')
+    engine = get_engine()
+    with Session(engine) as session:
+        f_upload = Upload(uid=uid, filename=os.path.basename(file.filename),
+                          upload_time=datetime.now(), status='pending')
+        new_filename = f_upload.upload_path(app.config['UPLOAD_FOLDER'])
+        session.add(f_upload)
+        session.commit()
+
+        if email:
+            user = _get_user_by_email(email, session)
+            if not user:
+                user = User(email=email)
+            user.uploads.append(f_upload)
+            f_upload.user = user
+            f_upload.user_id = user.id
+            session.add_all([user, f_upload])
+            session.commit()
+
+    file.save(new_filename)
+    return jsonify({'uid': str(uid)})
+
+    # filename = get_filename(file.filename)
+    # timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')  # int(time.time())
+    # email = request.form.get('email')
+    # if email:
+    #     uid = save_upload_with_email(file, email)
+    # else:
+    #     new_filename = f"{filename}_{timestamp}_{uid}"
+    #     file_path = os.path.join(app.config['UPLOAD_FOLDER'], new_filename)
+    #     file.save(file_path)
+    # response = {'uid': uid}
+    # return jsonify(response)
 
 
 @app.route('/status/<uid>', methods=['GET'])
@@ -49,36 +80,22 @@ def status(uid):
     Returns:
         flask.Response: JSON response containing the status, filename, timestamp, and explanation of the upload.
     """
+    email = None
+    filename = None
     print(uid)
-    file_path = find_file_by_uid(uid)
-
-    if file_path is None:
-        response = {
-            'status': 'not found',
-            'filename': '',
-            'timestamp': '',
-            'explanation': None
-        }
-        return jsonify(response), 404
-
-    file_status = get_status(file_path)
-    print("bug check")
-    filename, timestamp, explanation = get_file_details(file_path, file_status)
-
-    response = {
-        'status': file_status,
-        'filename': filename,
-        'timestamp': timestamp,
-        'explanation': explanation
-    }
-
-    if file_status == 'done':
-        output_file = get_output_file(file_path)
-        if output_file:
-            output_data = parse_output_file(output_file)
-            response.update(output_data)
-
-    return jsonify(response)
+    if '@' in uid:
+        filename, email = uid.split(' ')
+        uid = None
+    # email = request.form.get('email')
+    # filename = request.form.get('filename')
+    if uid:
+        response = get_status_by_uid(uid)
+        if not response:
+            return jsonify({'status': 'not found'}), 404
+    elif email and filename:  # Only search if both
+        get_status_by_email_and_filename(email, filename)
+    else:
+        flash("Please enter a UID, or provide both email and filename")
 
 
 def generate_uid():
@@ -197,6 +214,76 @@ def run_web_server():
     This function starts the Flask web server to handle incoming requests.
     """
     app.run()
+
+
+def get_output_path(filename: str) -> str:
+    """
+    Retrieves the path to the output file associated with the given filename.
+    Args:
+        filename (str): The filename for which to retrieve the output path.
+    Returns:
+        str: The path to the output file.
+    """
+    name, _ = os.path.splitext(filename)
+    return os.path.join(OUTPUTS_FOLDER, f"{name}.json")
+
+
+def load_output(filename: str) -> Dict:
+    """
+    Loads the content of the output file associated with the given filename as a JSON object.
+    Args:
+        filename (str): The filename of the output file to be loaded.
+    Returns:
+        Dict: The loaded JSON content as a dictionary.
+    """
+    output_path = get_output_path(filename)
+    with open(output_path, 'r') as file:
+        return json.load(file)
+
+
+def get_status_by_uid(uid):
+    engine = get_engine()
+    with Session(engine) as session:
+        file_data = session.query(Upload).filter_by(uid=uid).first()
+        if file_data:
+            if file_data.status == UploadStatus.done:
+                output = load_output(f"{uid}.json")
+                status_info = save_to_json(uid, file_data.status, file_data.filename, file_data.finish_time, output)
+            else:
+                status_info = save_to_json(uid, file_data.status, file_data.filename, file_data.finish_time)
+            return Response(json.dumps(status_info), mimetype='application/json')
+        else:
+            return None
+
+
+def get_status_by_email_and_filename(email, filename):
+    engine = get_engine()
+    with Session(engine) as session:
+        user = session.query(User).filter_by(email=email).first()
+        if user:
+            latest_upload = session.query(Upload).filter_by(user=user, filename=filename).order_by(
+                Upload.upload_time.desc()).first()
+            if latest_upload:
+                return redirect(url_for('status', uid=latest_upload.uid))
+            else:
+                flash("Filename not found")
+        else:
+            flash(f"Email: {email} does not exist")
+
+
+def _get_user_by_email(email, session: Session) -> Union[User, None]:
+    """
+    Retrieves a user by their email address.
+    :param email: The email address of the user to be retrieved.
+    :param session: The SQLAlchemy session object.
+    :return: User or None - The User object if found, or None if the user does not exist.
+    """
+    select_statement = select(User).where(User.email == email)
+    result = session.scalars(select_statement).all()
+    if result:
+        return result[0]
+    else:
+        return None
 
 
 if __name__ == '__main__':
