@@ -2,8 +2,11 @@ import os
 import time
 import json
 import asyncio
+from datetime import datetime
 from presentation_parser import PresentationParser
 from gpt_slide_explainer import GPTSlideExpander
+from db.db_engine import Upload, UploadStatus, get_engine
+from sqlalchemy.orm import Session
 
 UPLOADS_FOLDER = 'uploads'
 OUTPUTS_FOLDER = 'outputs'
@@ -19,18 +22,34 @@ def process_files():
     After processing, it saves the explanation, updates the status, and sleeps for a specified duration.
     """
     while True:
-        unprocessed_files = find_unprocessed_files()
-
-        for file_path in unprocessed_files:
-            print(f"Processing file: {file_path}")
-
-            presentation = load_presentation(file_path)
-            explanation = generate_explanation(presentation)
-
-            output_file = save_explanation(explanation, file_path)
-            print(f"Saved explanation to: {output_file}")
-
-            update_status(file_path)
+        engine = get_engine()
+        with Session(engine) as session:
+            pending_status = UploadStatus.pending
+            upload_files = session.query(Upload).filter_by(status=pending_status).all()
+            for upload_file in upload_files:
+                try:
+                    upload_path = f"{UPLOADS_FOLDER}/{upload_file.filename}"
+                    presentation = load_presentation(upload_path)
+                    explanation = generate_explanation(presentation)
+                    upload_file.finish_time = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+                    upload_file.status = UploadStatus.done
+                    output_file = save_explanation(explanation, upload_path)
+                    print(f"Saved explanation to: {output_file}")
+                    session.commit()
+                except KeyError:
+                    continue
+        # unprocessed_files = find_unprocessed_files()
+        #
+        # for file_path in unprocessed_files:
+        #     print(f"Processing file: {file_path}")
+        #
+        #     presentation = load_presentation(file_path)
+        #     explanation = generate_explanation(presentation)
+        #
+        #     output_file = save_explanation(explanation, file_path)
+        #     print(f"Saved explanation to: {output_file}")
+        #
+        #     update_status(file_path)
 
         time.sleep(SLEEP_TIME)
 
